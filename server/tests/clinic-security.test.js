@@ -48,6 +48,7 @@ const fakeQuery = async (sql, params = []) => {
   if (sql.startsWith('INSERT INTO audit_logs')) { const row = { user_name: params[0], user_role: params[1], action: params[2] }; db.logs.push(row); return rows([row]); }
   if (sql.startsWith('INSERT INTO appointments')) { const row = { id: params[0], pet_id: params[1], vet_id: params[2], date: params[3], time: params[4], reason: params[5], status: 'Scheduled', amount: params[6] }; db.appts.push(row); return rows([row]); }
   if (sql.startsWith('INSERT INTO consultations')) { const row = Object.fromEntries(['id', 'pet_id', 'vet_id', 'appt_id', 'date', 'symptoms', 'objective', 'diagnosis', 'treatment', 'prescription'].map((k, i) => [k, params[i]])); db.consults.push(row); return rows([row]); }
+  if (sql.startsWith('UPDATE consultations SET care_status')) { const row = db.consults.find(c => c.id === params[3]); Object.assign(row, {care_status:params[0], follow_up_date:params[1], follow_up_reason:params[2]}); return rows([row]); }
   if (sql.startsWith('INSERT INTO vaccinations')) { const row = { id: params[0], pet_id: params[1], card_id: params[2], vaccine: params[3], brand: params[4], batch: params[5], done: true, vet_id: params[9], recorded_by: params[10] }; db.vaccs.push(row); return rows([row]); }
   if (sql.startsWith('INSERT INTO pet_requests')) { const row = { id: params[12], owner_id: params[13], name: params[0], status: 'Pending',revision:0 }; db.requests.push(row); return rows([row]); }
   if (sql.startsWith('UPDATE appointments')) {
@@ -169,7 +170,7 @@ for (const failure of [/INSERT INTO vaccinations/, /SET status = 'Completed'/, /
   assert.equal((await request('vet', 'POST', '/consultations', soap())).status, 500);
   assert.equal(db.consults.length, 0); assert.equal(db.vaccs.length, 0); assert.equal(db.appts[0].status, 'In consultation'); assert.equal(rollbacks, 1);
 });
-const bill = () => ({ amount: 550, discount: 50, billingStatus: 'Paid', paymentMethod: 'Cash', cashTendered: 600, invoiceItems: [{ name: 'Consultation', price: 600, qty: 1 }] });
+const bill = () => ({ amount: 450, discount: 50, billingStatus: 'Paid', paymentMethod: 'Cash', cashTendered: 500, invoiceItems: [{ catalogId: 'srv_consult', name: 'Routine General Consultation & Exam', price: 500, qty: 1 }] });
 test('billing rejects invalid amount, quantity, discount, channel, cash and reference', async () => {
   for (const body of [{ ...bill(), amount: -1 }, { ...bill(), discount: -50 }, { ...bill(), paymentMethod: 'Invalid' }, { ...bill(), cashTendered: 100 }, { ...bill(), paymentMethod: 'Maya' }, { ...bill(), invoiceItems: [{ name: 'Bad', price: 600, qty: 0.5 }] }]) assert.equal((await request('assistant', 'POST', '/appointments/a1/billing', body)).status, 400);
   assert.equal(calls.some(c => c.sql.startsWith('UPDATE appointments')), false);

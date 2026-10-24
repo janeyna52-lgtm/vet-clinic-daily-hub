@@ -1,3 +1,5 @@
+import { ensureCareSchema, validateCarePlan } from "../careWorkflow.js";
+import { priceCatalog, canonicalInvoice } from "../priceCatalog.js";
 import { adminRouter } from "./admin.js";
 import { ensurePetRegistrationSchema, validatePetRegistration, validatePetPhoto, lockRegistrationOwner, checkRegistrationCapacity, checkRequestRevision, registrationAudit, registrationError } from '../petRegistration.js';
 import { checkoutRouter } from "./checkout.js";
@@ -54,6 +56,7 @@ function toDateStr(val) {
 clinicRouter.get("/state", async (req, res) => {
   try {
     await ensurePetRegistrationSchema();
+    await ensureCareSchema();
     const owner = req.user.role === "owner";
     const vet = req.user.role === "vet";
     const scopeParams = owner ? [req.user.ownerId] : vet ? [[req.user.vetId, req.user.id].filter(Boolean)] : [];
@@ -159,6 +162,7 @@ clinicRouter.get("/state", async (req, res) => {
       paidAt: a.paid_at || null,
       invoiceItems: a.invoice_items || [],
       intakeVitals: a.intake_vitals || null,
+      handoffs: owner ? [] : (a.handoffs || []),
       cancelReason: a.cancel_reason || ""
     }));
 
@@ -210,6 +214,9 @@ clinicRouter.get("/state", async (req, res) => {
       objective: c.objective,
       diagnosis: c.diagnosis,
       treatment: c.treatment,
+      careStatus: c.care_status || "Routine care",
+      followUpDate: c.follow_up_date ? toDateStr(c.follow_up_date) : null,
+      followUpReason: c.follow_up_reason || "",
       prescription: c.prescription || ""
     }));
 
@@ -1634,31 +1641,16 @@ clinicRouter.delete("/appointments/:id", async (req, res) => {
 });
 
 /* 5.1 CLINIC BILLING & PRICE CATALOG */
-const CLINIC_PRICE_CATALOG = [
-  { id: "srv_consult", category: "Consultation & Exam", name: "Routine General Consultation & Exam", price: 500, desc: "Standard physical evaluation of vitals & condition" },
-  { id: "srv_senior", category: "Consultation & Exam", name: "Senior Comprehensive Wellness Exam", price: 750, desc: "In-depth geriatric health review (7+ yrs)" },
-  { id: "srv_rabies", category: "Vaccination & Preventive", name: "Anti-Rabies Vaccine (Annual Booster)", price: 350, desc: "RA 9482 certified anti-rabies shot & official certificate" },
-  { id: "srv_dhpp", category: "Vaccination & Preventive", name: "DHPP 5-in-1 Core Canine Vaccine", price: 650, desc: "Core Distemper, Adenovirus, Parvovirus, Parainfluenza" },
-  { id: "srv_fvrcp", category: "Vaccination & Preventive", name: "FVRCP 4-in-1 Core Feline Vaccine", price: 700, desc: "Core Rhinotracheitis, Calicivirus, Panleukopenia" },
-  { id: "srv_deworm", category: "Vaccination & Preventive", name: "Broad-Spectrum Deworming Dose", price: 250, desc: "Canex/Drontal oral tablet/suspension for round/hook/tapeworms" },
-  { id: "srv_heartworm", category: "Diagnostic & Lab", name: "Heartworm Rapid Antigen Test (Snap)", price: 850, desc: "Dirofilaria immitis blood test before preventive dispense" },
-  { id: "srv_nexgard", category: "Pharmacy & Parasiticide", name: "NexGard Spectra Chewable Tablet", price: 550, desc: "Monthly flea, tick, heartworm and intestinal worm chewable" },
-  { id: "srv_simparica", category: "Pharmacy & Parasiticide", name: "Simparica Trio Chewable Tablet", price: 600, desc: "Monthly flea, tick, heartworm broad-spectrum chewable" },
-  { id: "srv_cbc", category: "Diagnostic & Lab", name: "Complete Blood Count (CBC)", price: 750, desc: "WBC, RBC, Hemoglobin, Platelet count analysis" },
-  { id: "srv_chem", category: "Diagnostic & Lab", name: "Comprehensive Blood Chemistry Panel", price: 1400, desc: "Kidney, liver enzymes, glucose screening" },
-  { id: "srv_dental", category: "Dental & Surgery", name: "Ultrasonic Dental Scaling & Polish", price: 1800, desc: "Periodontal calculus removal & enamel polish" },
-  { id: "srv_ear", category: "Procedures & Care", name: "Deep Ear Cleaning & Cytology", price: 400, desc: "Canal flush and microscopic ear swab exam" },
-  { id: "srv_wound", category: "Procedures & Care", name: "Wound Treatment & Antiseptic Bandaging", price: 450, desc: "Antiseptic lavage and protective dressing" },
-  { id: "srv_groom", category: "Procedures & Care", name: "Sanitary Grooming & Nail Trim", price: 250, desc: "Nail clip, paw pad trim, anal gland expression" }
-];
+
 
 clinicRouter.get("/services/prices", (req, res) => {
-  res.json({ success: true, catalog: CLINIC_PRICE_CATALOG });
+  res.json({ success: true, catalog: priceCatalog() });
 });
 
 clinicRouter.post("/appointments/:id/billing", async (req, res) => {
   const apptId = req.params.id;
-  const { amount, billingStatus, paymentMethod, invoiceItems, actorName, actorRole } = req.body;
+  const { amount, billingStatus, paymentMethod, actorName, actorRole } = req.body;
+  const invoiceItems = canonicalInvoice(req.body.invoiceItems);
 
   const discount = req.body.discount === undefined ? 0 : Number(req.body.discount);
   const validItems = Array.isArray(invoiceItems) && invoiceItems.length > 0 && invoiceItems.length <= 100 && invoiceItems.every(item => item && typeof item.name === "string" && item.name.trim() && typeof item.price === "number" && Number.isFinite(item.price) && item.price >= 0 && item.price <= 10000000 && Number.isInteger(item.qty) && item.qty > 0 && item.qty <= 1000);
@@ -2190,6 +2182,8 @@ clinicRouter.delete("/vaccinations/:id", async (req, res) => {
 /* 7. CONSULTATIONS (SOAP MEDICAL NOTES) */
 clinicRouter.post("/consultations", async (req, res) => {
   const { id, petId, apptId, date, symptoms, objective, diagnosis, treatment, prescription, vaccination, weight } = req.body;
+  const careError = validateCarePlan(req.body, date);
+  if (careError) return res.status(400).json({ error: careError });
   const vetId = req.user.vetId || req.user.id;
   const consultId = id || ("c_" + crypto.randomUUID());
   const required = [symptoms, objective, diagnosis, treatment];
@@ -2201,6 +2195,7 @@ clinicRouter.post("/consultations", async (req, res) => {
   if (weight !== undefined && (typeof weight !== "number" || !Number.isFinite(weight) || weight <= 0 || weight > 120)) return res.status(400).json({ error: "Enter a valid weight." });
   try {
     await ensureCheckoutInboxSchema();
+    await ensureCareSchema();
     if (vaccination) validateBoosterDate(date, vaccination.nextDue);
     const result = await withTransaction(async client => {
       const appt = (await client.query("SELECT * FROM appointments WHERE id = $1 FOR UPDATE", [apptId])).rows[0];
@@ -2211,6 +2206,7 @@ clinicRouter.post("/consultations", async (req, res) => {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
         [consultId, petId, vetId, apptId, date, symptoms.trim(), objective.trim(), diagnosis.trim(), treatment.trim(), prescription.trim()]
       );
+      await client.query("UPDATE consultations SET care_status=$1, follow_up_date=$2, follow_up_reason=$3 WHERE id=$4", [req.body.careStatus || "Routine care", req.body.careStatus && req.body.careStatus !== "Routine care" ? req.body.followUpDate : null, req.body.careStatus && req.body.careStatus !== "Routine care" ? req.body.followUpReason.trim() : "", consultId]);
       let savedVaccination = null;
       if (vaccination) {
         const pet = (await client.query("SELECT vaccination_card_id FROM pets WHERE id = $1", [petId])).rows[0];
@@ -2435,3 +2431,24 @@ clinicRouter.get("/reminders/status", async (req, res) => {
 clinicRouter.post("/reminders/log-call", handleSendReminder);
 clinicRouter.post("/reminders/send", handleSendReminder);
 
+
+// A handoff transfers responsibility and preserves the sending doctor's instructions.
+clinicRouter.post('/appointments/:id/handoff', async (req, res) => {
+  const { vetId, note } = req.body;
+  if (typeof vetId !== 'string' || typeof note !== 'string' || !note.trim() || note.length > 3000) return res.status(400).json({error: 'Choose a veterinarian and enter handoff instructions (up to 3000 characters).'});
+  try {
+    await ensureCareSchema();
+    await withTransaction(async client => {
+      const row = (await client.query('SELECT * FROM appointments WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+      if (!row || !assignedTo(row, req.user)) throw Object.assign(new Error('This visit is no longer assigned to you.'), {status: 403});
+      if (!['Checked-in', 'In consultation'].includes(row.status)) throw Object.assign(new Error('Only an active arrival can be handed over.'), {status: 409});
+      const target = (await client.query("SELECT id,vet_id,first_name,last_name FROM users WHERE role='vet' AND (id=$1 OR vet_id=$1) AND COALESCE(to_jsonb(users)->>'is_active','true') <> 'false' FOR SHARE", [vetId])).rows[0];
+      if (!target || [req.user.id, req.user.vetId].includes(target.id) || [req.user.id, req.user.vetId].filter(Boolean).includes(target.vet_id)) throw Object.assign(new Error('Choose another active veterinarian.'), {status: 400});
+      const recipient = target.vet_id || target.id;
+      const entry = {from: req.user.name, fromId: req.user.vetId || req.user.id, to: `${target.first_name} ${target.last_name}`, toId: recipient, note: note.trim(), at: new Date().toISOString()};
+      await client.query("UPDATE appointments SET vet_id=$1, status='Checked-in', handoffs=handoffs || $2::jsonb WHERE id=$3", [recipient, JSON.stringify([entry]), row.id]);
+      await client.query('INSERT INTO audit_logs (user_name,user_role,action) VALUES ($1,$2,$3)', [req.user.name, req.user.role, `Handed visit ${row.id} to ${recipient}`]);
+    });
+    res.json({success: true});
+  } catch (e) { res.status(e.status || 500).json({error: e.status ? e.message : 'Unable to save handoff. Please retry.'}); }
+});

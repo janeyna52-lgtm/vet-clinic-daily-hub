@@ -132,7 +132,7 @@ test('five explicit provider rejections stop retries and surface a failed job',a
 });
 
 // Reception handoff shares the same isolated database and real authenticated router.
-const payment = { amount:600, paymentMethod:'Cash',cashTendered:600,invoiceItems:[{name:'Synthetic consultation',price:600,qty:1}] };
+const payment = { amount:500, paymentMethod:'Cash',cashTendered:500,invoiceItems:[{catalogId:'srv_consult',name:'Routine General Consultation & Exam',price:500,qty:1}] };
 const consultation = id => ({ id:`note_${id}`,apptId:id,petId:'p7',date:clinicClock().date,symptoms:'Synthetic history',objective:'Synthetic findings',diagnosis:'Synthetic assessment',treatment:'Synthetic plan',prescription:'' });
 const prepareVisit = async (id,status='In consultation',visitDate=clinicClock().date)=>{
  await query("INSERT INTO appointments(id,pet_id,vet_id,date,time,reason,status) VALUES($1,'p7','v1',$2,'09:00','Synthetic handoff',$3)",[id,visitDate,status]);
@@ -195,4 +195,33 @@ test('closed/restarted workstation releases or expires claims, and stale tokens 
  const again=await req('assistant','POST','/checkout-inbox/old-unpaid/claim',{});assert.equal(again.status,200);
  assert.notEqual(again.data.claimToken,first.data.claimToken);
  assert.equal((await req('assistant','POST','/checkout-inbox/old-unpaid/renew',{claimToken:first.data.claimToken})).status,409);
+});
+
+test('vet handoff is atomic, scoped, race-safe and exposes instructions to the receiving vet', async () => {
+ await query(`INSERT INTO users(id,first_name,last_name,birthday,password_hash,email,role,vet_id,mobile_number,email_verified_at,mobile_verified) VALUES('u_vet2','Second','Doctor','1990-01-01','unused','vet2@example.invalid','vet','v2','+639000000002',NOW(),true)`);
+ await query("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,'u_vet2',NOW()+INTERVAL '1 day')",[sha256('test-vet2')]);
+ await query("INSERT INTO appointments(id,pet_id,vet_id,date,time,status,reason) VALUES('vet-handoff','p8','v1',$1,'11:00','In consultation','Clinical handoff')",[date]);
+ const body={vetId:'v2',note:'Monitor hydration; treatment not yet administered.'};
+ for(const role of ['owner','assistant','admin','vet2']) assert.equal((await req(role,'POST','/appointments/vet-handoff/handoff',body)).status,403);
+ assert.equal((await req('vet','POST','/appointments/vet-handoff/handoff',{...body,note:''})).status,400);
+ await query(`CREATE FUNCTION reject_handoff_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action LIKE 'Handed visit vet-handoff%' THEN RAISE EXCEPTION 'Synthetic handoff audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_handoff BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_handoff_audit()`);
+ assert.equal((await req('vet','POST','/appointments/vet-handoff/handoff',body)).status,500);
+ assert.equal((await query("SELECT vet_id FROM appointments WHERE id='vet-handoff'")).rows[0].vet_id,'v1');
+ await query('DROP TRIGGER fail_handoff ON audit_logs');
+ const results=await Promise.all([req('vet','POST','/appointments/vet-handoff/handoff',body),req('vet','POST','/appointments/vet-handoff/handoff',body)]);
+ assert.deepEqual(results.map(r=>r.status).sort(),[200,403]);
+ const row=(await query("SELECT * FROM appointments WHERE id='vet-handoff'")).rows[0];
+ assert.equal(row.status,'Checked-in');assert.equal(row.handoffs.length,1);assert.equal(row.handoffs[0].note,body.note);
+ const state=await req('vet2','GET','/state');assert.equal(state.status,200);
+ assert.equal(state.data.data.appts.find(a=>a.id==='vet-handoff').handoffs[0].note,body.note);
+ assert.ok(state.data.data.pets.some(p=>p.id==='p8'));
+ assert.ok(!(await req('vet','GET','/state')).data.data.appts.some(a=>a.id==='vet-handoff'));
+ assert.equal((await req('vet2','PATCH','/appointments/vet-handoff/status',{status:'In consultation'})).status,200);
+ const plan={id:'care-followup',petId:'p8',apptId:'vet-handoff',date:clinicClock().date,symptoms:'Low appetite',objective:'Alert',diagnosis:'Observation required',treatment:'Monitor intake',prescription:'',careStatus:'Recheck required',followUpDate:shiftDate(clinicClock().date,7),followUpReason:'Reassess appetite and hydration'};
+ assert.equal((await req('vet2','POST','/consultations',{...plan,followUpDate:'2026-02-30'})).status,400);
+ assert.equal((await req('vet2','POST','/consultations',plan)).status,200);
+ const persisted=(await req('vet2','GET','/state')).data.data.consults.find(c=>c.id===plan.id);
+ assert.equal(persisted.careStatus,'Recheck required');assert.equal(persisted.followUpDate,plan.followUpDate);
+ assert.equal(persisted.followUpReason,plan.followUpReason);
+ assert.equal((await req('vet2','POST','/appointments/vet-handoff/handoff',{vetId:'v1',note:'Already complete'})).status,409);
 });

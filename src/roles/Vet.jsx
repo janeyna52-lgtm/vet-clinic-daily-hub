@@ -1,3 +1,5 @@
+import HandoffModal from "./HandoffModal.jsx";
+import VaccinationCards from "./VaccinationCards.jsx";
 import { useState } from "react";
 import { AlertTriangle, Thermometer, Scale, CalendarDays, Search, Play, FileText } from "lucide-react";
 import { I, M, Stats, Hero, TODAY, plus, moveAppt, petName, ICON, Badge } from "../lib.jsx";
@@ -11,6 +13,7 @@ const tempTone = s => (s === "normal" ? "" : s === "high_fever" || s === "hypoth
 const weightTone = s => (s === "ideal" ? "" : "wa");
 
 function Dash({ db, setDb, me, go, say }) {
+  const [handoff, setHandoff] = useState(null);
   const [activeSoap, setActiveSoap] = useState(null); // { appt, pet }
   const [scope, setScope] = useState("my");          // "all" = whole clinic, "my" = assigned to this doctor
 
@@ -19,7 +22,7 @@ function Dash({ db, setDb, me, go, say }) {
     return false;
   };
 
-  const todayAppts = (db.appts || []).filter(a => a.date === TODAY && a.status !== "Cancelled");
+  const todayAppts = (db.appts || []).filter(a => (a.date === TODAY || ["Checked-in", "In consultation"].includes(a.status)) && a.status !== "Cancelled");
   const scoped = scope === "all" ? todayAppts : todayAppts.filter(isMyVet);
   // Workflow: the doctor only sees patients the front desk has already checked in (Scheduled / Confirmed stay at the front desk).
   const queue = scoped.filter(a => ["Checked-in", "In consultation", "Completed"].includes(a.status)).sort((a, b) => a.time.localeCompare(b.time));
@@ -77,7 +80,7 @@ function Dash({ db, setDb, me, go, say }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="sf-section-hd">
           <div>
-            <h3>Today&rsquo;s clinical queue</h3>
+            <h3>Active clinical queue</h3>
             <p>Patients checked in by the front desk appear here for examination and SOAP notes.{notArrived > 0 ? ` ${notArrived} more expected today, not yet checked in.` : ""}</p>
           </div>
           <div className="sf-toolbar">
@@ -99,7 +102,7 @@ function Dash({ db, setDb, me, go, say }) {
               return (
                 <div key={a.id} className={`sf-row ${rowCls}`}>
                   <div className="sf-row-main">
-                    <span className="sf-time">{a.time}</span>
+                    <span className="sf-time">{a.date !== TODAY && <small>{a.date}<br /></small>}{a.time}</span>
                     <span className="sf-species"><I e={ICON[p.species] || "paw"} size={22} /></span>
                     <div className="sf-body">
                       <div className="sf-name">
@@ -111,6 +114,7 @@ function Dash({ db, setDb, me, go, say }) {
                         )}
                       </div>
                       <div className="sf-reason"><b>Chief complaint:</b> {a.reason}</div>
+                      {(a.handoffs || []).map((h, i) => <p key={i} style={{whiteSpace: "pre-wrap"}}><b>Handoff: {h.from} → {h.to}</b> ({new Date(h.at).toLocaleString()})<br />{h.note}</p>)}
                       {iv ? (
                         <div className="sf-chips">
                           <span className={`sf-chip ${tempTone(iv.tempAnalysis?.status)}`}><Thermometer size={12} aria-hidden="true" />{iv.temp}&deg;C, {iv.tempAnalysis?.label || "Normal"}</span>
@@ -125,6 +129,7 @@ function Dash({ db, setDb, me, go, say }) {
 
                   <div className="sf-row-act">
                     <Badge v={a.status} />
+                    {["Checked-in", "In consultation"].includes(a.status) && <button className="btn sm" onClick={() => setHandoff(a)}>Hand over care</button>}
                     {a.status === "Checked-in" && <button className="btn sm gold" onClick={() => startConsult(a)}>Start consultation</button>}
                     {a.status === "In consultation" && <button className="btn sm gold" onClick={() => setActiveSoap({ appt: a, pet: p })}>Resume SOAP notes</button>}
                     {a.status === "Completed" && <button className="btn sm ghost" onClick={() => openEmr(p.id)}><FileText size={14} aria-hidden="true" />View EMR</button>}
@@ -138,6 +143,7 @@ function Dash({ db, setDb, me, go, say }) {
         )}
       </section>
 
+      {handoff && <HandoffModal appt={handoff} db={db} me={me} setDb={setDb} onClose={() => setHandoff(null)} />}
       {activeSoap && (
         <SoapConsultationModal
           appt={activeSoap.appt}
@@ -164,7 +170,7 @@ export const vet = {
     { k: "cal", l: "Doctor Schedule", i: "calendar", Page: ClinicCalendar, sub: "Clinic appointment calendar and timetable." },
     { k: "pets", l: "Patient EMR & Masterlist", i: "paw", Page: ClientsAndPatientsPage, sub: "Digital medical records, patient profiles, and official vaccination cards." },
     { k: "records", l: "SOAP Consultations", i: "file", Page: ConsultationsPage, sub: "Certified SOAP consultation notes, clinical diagnoses, and prescriptions." },
-    M("vacc", "Vaccination Station", "syringe", "vacc", "Administer vaccines and track calculated booster dates."),
+    { k: "vacc", l: "Vaccination Cards", i: "syringe", Page: VaccinationCards, sub: "Review patient cards. Certify administered doses through the consultation." },
     { k: "owners", hide: true, Page: ClientsAndPatientsPage },
     { k: "reports", l: "Clinical Reports", i: "chart", rep: 1, sub: "Filter and print clinic consultation summaries." },
   ],

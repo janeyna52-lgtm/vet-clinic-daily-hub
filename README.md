@@ -247,3 +247,43 @@ Validate governance against an isolated schema in a disposable local database
 ```bash
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/pawcare npm run test:admin:postgres
 ```
+
+### Fixed prices and continuity of care
+
+Owners can browse Services & Prices. New invoices require catalog IDs and the
+exact official names and unit prices; the server rejects custom or altered lines.
+Quantity and the existing invoice discount remain available to reception. Paid
+historical receipts retain their original amounts. Older unpaid custom invoices
+must be rebuilt from the catalog before payment.
+
+Configure additional fixed products using the server environment variable
+`CLINIC_PRODUCTS_JSON`, a JSON array of `{id,name,category,price}`. IDs must start
+with `product_` and contain lowercase letters, digits or underscores. Categories
+are `Pet shampoo`, `Pet vitamins`, `Pet medicine`, and `Pet accessories`.
+Prices must be positive PHP amounts with at most two decimals. Use the clinic's
+approved product names, sizes and prices; none are invented by the application.
+An absent array adds no products; invalid configuration fails closed. Restart the
+API after configuration changes. The same catalog serves owners and checkout.
+
+Apply `server/database/care-workflow.sql` to existing databases before deployment.
+New database initialization includes it; endpoints also initialize it when DDL
+permission is available. Follow-up/recheck status, target date and instructions
+commit with the consultation. Owners and reception see follow-up cards; booking
+still uses available slots and clinic confirmation. A target date is not a reserved
+appointment or an automatic SMS reminder.
+
+Veterinarians manage vaccination cards from their menu and certify doses through
+SOAP finalization. Reception retains registration, read-only card access and
+reminder coordination. Owner booking derives its reason from the selected service;
+optional notes retain symptoms and special requests.
+
+An assigned veterinarian can hand an active arrival to another active veterinarian
+with required instructions. Transfer, note and audit commit together, returning
+the visit to Checked-in for the receiving vet. The recipient sees the patient
+history and timestamped handoff chain; the former vet loses visit access unless
+another assignment still grants patient-history access. Handoffs move an existing
+arrival into the receiving queue; they do not reserve another appointment slot.
+
+Regression checks: `node --test server/tests/care-workflow.test.js`,
+`npm run test:clinic`, `npm run test:scheduling`, and the PostgreSQL scheduling
+suite, which includes handoff and care-plan persistence tests.

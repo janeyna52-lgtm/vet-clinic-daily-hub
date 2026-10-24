@@ -10,19 +10,14 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
   const record = (db.records || []).find(r => r.apptId === appt.id) || {};
 
   const [catalog, setCatalog] = useState([]);
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [search, setSearch] = useState("");
   const [items, setItems] = useState(() => {
     if (appt.invoiceItems && Array.isArray(appt.invoiceItems) && appt.invoiceItems.length) {
       return appt.invoiceItems;
     }
-    // Default initial line item from appointment reason / amount
-    return [{
-      id: "line_init",
-      name: appt.reason || "Clinical Consultation / Exam",
-      category: "Consultation",
-      price: appt.amount || 600,
-      qty: 1
-    }];
+    return [];
   });
 
   const [method, setMethod] = useState(appt.paymentMethod || "Cash");
@@ -40,14 +35,15 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
       .then(res => {
         if (res?.catalog) setCatalog(res.catalog);
       })
-      .catch(() => {});
-  }, []);
+      .catch(err => setCatalogError(err.message));
+  }, [catalogAttempt]);
 
   const addItem = (item) => {
     setItems(prev => [
       ...prev,
       {
         id: "line_" + Math.random().toString(36).slice(2, 7),
+        catalogId: item.id,
         name: item.name,
         category: item.category,
         price: item.price,
@@ -78,7 +74,7 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
 
   const filteredCatalog = search.trim()
     ? catalog.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.category.toLowerCase().includes(search.toLowerCase()))
-    : [];
+    : catalog;
 
   const handlePay = async (ev) => {
     ev.preventDefault();
@@ -267,12 +263,12 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
             {/* Price Basis & Search Catalog */}
             <div style={{ marginBottom: "16px" }}>
               <label style={{ display: "block", fontSize: "12.5px", fontWeight: 700, color: "var(--navy)", marginBottom: "4px" }}>
-                Search Clinic Price Basis &amp; Add Services/Medicines
+                Add Services &amp; Other Products
               </label>
               <div style={{ position: "relative" }}>
                 <input
                   type="search"
-                  placeholder="Type to search e.g. Rabies, DHPP, Consult, Deworming, NexGard, CBC..."
+                  placeholder="Search vaccines, consultation, shampoo, vitamins, medicine or accessories"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   style={{ width: "100%", padding: "8px 12px 8px 34px", fontSize: "13px", borderRadius: "8px", border: "1.5px solid #cbd5e1" }}
@@ -283,7 +279,7 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
               </div>
 
               {/* Live search results dropdown */}
-              {search.trim() && (
+              {(catalog.length > 0 || search.trim()) && (
                 <div style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: "8px", marginTop: "4px", maxHeight: "190px", overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.1)", zIndex: 10 }}>
                   {filteredCatalog.length ? (
                     filteredCatalog.map(catItem => (
@@ -319,19 +315,21 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
                     ))
                   ) : (
                     <div style={{ padding: "10px 12px", fontSize: "12px", color: "#64748b" }}>
-                      No matching services found in catalog. You can edit line items below directly.
+                      No matching products or services. Choose an official catalog item.
                     </div>
                   )}
                 </div>
               )}
             </div>
 
+            {catalogError && <p role="alert">{catalogError} <button type="button" onClick={() => { setCatalogError(""); setCatalogAttempt(x => x + 1); }}>Retry prices</button></p>}
+            <p>Choose services and other products from the clinic catalog. Unit prices are fixed.</p>
             {/* Bill Line Items Table */}
             <div style={{ border: "1px solid #cbd5e1", borderRadius: "10px", overflow: "hidden", marginBottom: "16px" }}>
               <table style={{ width: "100%", fontSize: "12.5px", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ padding: "8px 10px" }}>Service / Medication</th>
+                    <th style={{ padding: "8px 10px" }}>Service / Product</th>
                     <th style={{ padding: "8px 10px", width: "70px", textAlign: "center" }}>Qty</th>
                     <th style={{ padding: "8px 10px", width: "110px", textAlign: "right" }}>Price (₱)</th>
                     <th style={{ padding: "8px 10px", width: "100px", textAlign: "right" }}>Subtotal</th>
@@ -345,10 +343,7 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
                         <input
                           type="text"
                           value={it.name}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setItems(prev => prev.map((item, i) => i === idx ? { ...item, name: val } : item));
-                          }}
+                          readOnly aria-label="Fixed catalog value"
                           style={{ width: "100%", fontSize: "12.5px", padding: "4px 6px", border: "1px solid transparent", borderRadius: "4px" }}
                           onFocus={e => e.target.style.borderColor = "#93c5fd"}
                           onBlur={e => e.target.style.borderColor = "transparent"}
@@ -368,10 +363,7 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
                           type="number"
                           min="0"
                           value={it.price}
-                          onChange={e => {
-                            const val = +e.target.value || 0;
-                            setItems(prev => prev.map((item, i) => i === idx ? { ...item, price: val } : item));
-                          }}
+                          readOnly aria-label="Fixed catalog value"
                           style={{ width: "85px", textAlign: "right", padding: "4px", fontSize: "12px", border: "1px solid #cbd5e1", borderRadius: "4px" }}
                         />
                       </td>
@@ -379,7 +371,7 @@ export default function BillingModal({ appt, db, setDb, me, onClose, onPaid }) {
                         ₱{(it.price * it.qty).toLocaleString()}
                       </td>
                       <td style={{ padding: "8px 6px", textAlign: "center" }}>
-                        {items.length > 1 && (
+                        {items.length > 0 && (
                           <button
                             type="button"
                             onClick={() => removeItem(idx)}

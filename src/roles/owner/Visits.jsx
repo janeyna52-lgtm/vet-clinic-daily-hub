@@ -48,7 +48,7 @@ export function OwnerVisits({ db, me }) {
     {open && <Modal title={`${petName(db, open.petId)} · ${fmtDate(open.date)}`} onClose={() => setOpen(null)}>
       <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 2 }}>
         <dl style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, margin: 0 }}>
-          {[["Veterinarian", vetName(open.vetId)], ["Diagnosis", open.diagnosis], ["Treatment", open.treatment || "—"], ["Prescription", open.prescription || "None prescribed"], open.notes ? ["Notes", open.notes] : null].filter(Boolean).map(([k, x]) =>
+          {[["Care status", open.careStatus || "Routine care"], ...(open.followUpDate ? [["Follow-up target", open.followUpDate], ["Follow-up instructions", open.followUpReason]] : []), ["Veterinarian", vetName(open.vetId)], ["Diagnosis", open.diagnosis], ["Treatment", open.treatment || "—"], ["Prescription", open.prescription || "None prescribed"], open.notes ? ["Notes", open.notes] : null].filter(Boolean).map(([k, x]) =>
             <div key={k}><dt style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mu)" }}>{k}</dt><dd style={{ margin: "2px 0 0", ...wrap }}>{x}</dd></div>)}
         </dl>
       </div>

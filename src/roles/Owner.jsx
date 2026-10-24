@@ -1,3 +1,5 @@
+import CareFollowUps from "./CareFollowUps.jsx";
+import Prices from "./owner/Prices.jsx";
 import { useState } from "react";
 import { I, Hero, ICON, Badge, dueState, scope, TODAY, petName } from "../lib.jsx";
 import OwnerAppts from "./owner/Appts.jsx";
@@ -64,6 +66,7 @@ function Dash({ db, setDb, me, go, say }) {
     </section>
 
     {over.length > 0 && <div className="ow-banner"><Icon n="alert" size={20} /><span><b>Vaccine overdue:</b> {over.map(v => `${petName(db, v.petId)} (${v.vaccine})`).join(", ")}</span><button className="btn sm" onClick={() => go("vacc")}>View records</button></div>}
+    <CareFollowUps db={db} go={go} owner />
     <RequestList db={db} setDb={setDb} me={me} say={say} onEdit={r => setModal({ form: true, editing: r })} />
     {pets.length ? <div className="petgrid">{pets.map(p => {
       const nv = V.filter(v => v.petId === p.id && v.nextDue && !v.done).sort((a, b) => a.nextDue.localeCompare(b.nextDue))[0];
@@ -88,5 +91,6 @@ const P = (k, l, i, sub, Page, s) => ({ k, l, i, sub, Page, s });
 export const owner = { portal: "Pet Owner Portal", Dash, Header: OwnerHeader, menu: [
   { k: "home", l: "My Pets", s: "Pets", i: "paw", dash: 1, sub: "Your pets, their profiles, next vaccines and visits." },
   P("appts", "My Appointments", "calendar", "Book, change or cancel a visit. Switch between the list and the calendar.", OwnerAppts, "Visits"),
+  P("prices", "Services & Prices", "file", "Official clinic service and product prices.", Prices, "Prices"),
   P("vacc", "Vaccination Cards", "syringe", "Pick a pet to see its vaccination card.", OwnerVacc, "Vaccines"),
   P("records", "Visit History", "file", "Diagnoses and treatments from past visits.", OwnerVisits, "History")] };

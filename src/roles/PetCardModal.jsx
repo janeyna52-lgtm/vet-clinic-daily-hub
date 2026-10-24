@@ -68,7 +68,7 @@ export default function PetCardModal({ petId, appt, db, setDb, me, onClose, onBo
     })
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const count = s => vaccs.filter(v => stateOf(v) === s).length;
-  const cardIdFormatted = p.vaccinationCardId || `VACC-${new Date().getFullYear()}-3067`;
+  const cardIdFormatted = p.vaccinationCardId || "Awaiting clinic-issued card";
 
   const savePhoto = async photo => {
     try {

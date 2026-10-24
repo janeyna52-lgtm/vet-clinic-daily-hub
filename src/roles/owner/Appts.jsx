@@ -34,11 +34,6 @@ const mkRules = (db, me, editing) => v => {
   if (!v.time) e.time = !v.service ? "Choose a service first" : v.date && v.vetId ? "Choose a time" : "Choose a veterinarian and date first";
 
   if (!e.petId && v.date && !e.date) { const x = others.find(a => a.petId === v.petId && a.date === v.date); if (x) e.date = `${petName(db, v.petId)} already has a visit that day at ${fmt12(x.time)}`; }
-  if (S) {
-    if (!v.reasonSel) e.reasonSel = "Choose one";
-    else if (!S.options.includes(v.reasonSel)) e.reasonSel = "Pick one from the list";
-    else if (v.reasonSel === "Other") { const r = v.reasonOther.trim(); if (!r) e.reasonOther = "Please describe it"; else if (r.length < 3) e.reasonOther = "Use at least 3 characters"; else if (r.length > 200) e.reasonOther = "Keep it under 200 characters"; else if (!/[A-Za-zÀ-ÿ]/.test(r)) e.reasonOther = "Describe it in words, not only numbers or symbols"; }
-  }
   const nt = (v.notes || "").trim(); if (nt.length > 200) e.notes = "Keep notes under 200 characters"; else if (nt && !/[A-Za-zÀ-ÿ]/.test(nt)) e.notes = "Write a few words, not only numbers or symbols";
   return e;
 };
@@ -47,8 +42,7 @@ function BookForm({ db, setDb, me, say, editing, start, onClose }) {
   const TODAY = bookingToday(), LAST = lastDay();
   const pets = scope(db, me, "pets"), owner = db.owners.find(o => o.id === me.ownerId) || {};
   const prev = editing ? serviceOf(editing) : "", svc0 = editing ? prev : start && start.reason ? inferService(start.reason) : "";
-  const [rs, ro] = editing ? splitReason(prev, editing.reason) : start && start.reason ? splitReason(svc0, start.reason) : ["", ""];
-  const f = useLive({ service: svc0, petId: editing ? editing.petId : (start && start.petId) || (pets.length === 1 ? pets[0].id : ""), vetId: editing ? editing.vetId : "", date: editing ? editing.date : (start && start.date) || "", time: editing ? editing.time : "", reasonSel: rs, reasonOther: ro, notes: editing ? editing.notes || "" : "" }, mkRules(db, me, editing));
+  const f = useLive({ service: svc0, petId: editing ? editing.petId : (start && start.petId) || (pets.length === 1 ? pets[0].id : ""), vetId: editing ? editing.vetId : "", date: editing ? editing.date : (start && start.date) || "", time: editing ? editing.time : "", notes: editing ? editing.notes || "" : "" }, mkRules(db, me, editing));
   const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState("");
   const { v } = f, S = SERVICES[v.service];
   const availability = useAvailability({ ...v, excludeId: editing?.id });
@@ -63,7 +57,7 @@ function BookForm({ db, setDb, me, say, editing, start, onClose }) {
     if (!times.includes(v.time)) { say("Choose an available time from the refreshed list."); availability.refresh(); return; }
     if (!scope(db, me, "pets").some(p => p.id === v.petId)) { say("You can only book for your own pets"); return onClose(); }
     if (editing) { const cur = db.appts.find(a => a.id === editing.id); if (!cur || !OPEN.includes(cur.status)) { say("This visit can no longer be changed"); return onClose(); } }
-    const reason = makeReason(v.service, v.reasonSel, v.reasonOther.trim()), notes = (v.notes || "").trim();
+    const reason = (v.service === svc0 && (editing?.reason || start?.reason) ? (editing?.reason || start.reason) : S.label), notes = (v.notes || "").trim();
     const apptId = editing ? editing.id : ("a_" + uid());
 
     const payload = {
@@ -124,15 +118,13 @@ function BookForm({ db, setDb, me, say, editing, start, onClose }) {
         )}
         {!pets.length && <p className="ow-note">You have no pets on your account yet. Please ask the clinic front desk to register your pet first.</p>}
         {moved && <p className="ow-note">Changing the service, date, time or veterinarian sends this visit back to “Scheduled” so the clinic can re-confirm it.</p>}
-        <ServicePicker value={v.service} onChange={x => { if (x === v.service) return; f.set("service", x); f.quiet({ time: "", reasonSel: "", reasonOther: "" }); }} error={f.show("service")} />
+        <ServicePicker value={v.service} onChange={x => { if (x === v.service) return; f.set("service", x); f.quiet({ time: "" }); }} error={f.show("service")} />
         <Field id="petId" label="Pet" req type="select" value={v.petId} onChange={x => f.set("petId", x)} onBlur={() => f.blur("petId")} options={pets.map(p => [p.id, `${p.name} (${p.species})`])} error={f.show("petId")} valid={f.ok("petId")} hint="Which pet is coming in?" />
         <Field id="vetId" label="Veterinarian" req type="select" value={v.vetId} onChange={x => f.patch({ vetId: x, time: "" })} onBlur={() => f.blur("vetId")} options={liveDoctors(db)} error={f.show("vetId")} valid={f.ok("vetId")} hint="Times below update for the vet you pick" />
         <Field id="date" label="Date" req type="date" min={TODAY} maxDate={LAST} value={v.date} onChange={x => f.patch({ date: x, time: "" })} onBlur={() => f.blur("date")} error={f.show("date")} valid={f.ok("date")} hint={holidayName(v.date) ? `${holidayName(v.date)} is a holiday. The clinic is closed` : `Pick a day within the next ${MAX_DAYS} days (closed on Philippine holidays)`} />
         {availability.error && <button type="button" className="btn ghost" onClick={availability.refresh}>Retry availability</button>}
         <SlotPicker times={times} value={v.time} onChange={x => f.set("time", x)} error={f.show("time")} hint={timeHint} dur={S ? S.dur : 30} suggest={nextDay} onSuggest={() => f.patch({ date: nextDay, time: "" })} />
         {S && v.time && times.includes(v.time) && <p className="ow-note info">{S.label}: {fmt12(v.time)} to {fmt12(addMin(v.time, S.dur))} with {vetName}</p>}
-        {S && <Field id="reasonSel" label={S.pick} req type="select" value={v.reasonSel} onChange={x => f.set("reasonSel", x)} onBlur={() => f.blur("reasonSel")} options={S.options.map(r => [r, r])} error={f.show("reasonSel")} valid={f.ok("reasonSel")} hint={S.hint} />}
-        {S && v.reasonSel === "Other" && <Field id="reasonOther" label="Describe it" req type="textarea" rows={2} max={200} value={v.reasonOther} onChange={x => f.set("reasonOther", x)} onBlur={() => f.blur("reasonOther")} error={f.show("reasonOther")} valid={f.ok("reasonOther")} hint={v.service === "vaccination" ? "Example: leptospirosis shot" : "Example: limping on the left back leg since yesterday"} />}
         <Field id="notes" label="Note for the clinic (optional)" type="textarea" rows={2} max={200} value={v.notes} onChange={x => f.set("notes", x)} onBlur={() => f.blur("notes")} error={f.show("notes")} hint="Symptoms, behavior or anything the clinic should know" />
         <Suggest items={NOTE_IDEAS} onPick={s => f.set("notes", addNote(v.notes, s, 200))} />
         <p className="ow-hint" style={{ marginTop: 10 }}>The clinic will reach you at {owner.phone || "your number on file"}. You can update it in My Profile.</p>

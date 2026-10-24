@@ -57,13 +57,14 @@ const vetOf = v => {
     return "External Clinic (Guide)";
   }
   const n = v.vetName || (VETS.find(x => x[0] === v.vetId) || [])[1];
-  return n ? `${/^dr\.?\s/i.test(n) ? "" : "Dr. "}${n}${v.vetLicense ? ` · Lic. ${v.vetLicense}` : ""}` : "Dr. Ana Cruz · Lic. 04821";
+  return n ? `${/^dr\.?\s/i.test(n) ? "" : "Dr. "}${n}${v.vetLicense ? ` · Lic. ${v.vetLicense}` : ""}` : "Veterinarian not recorded";
 };
 const tone = s => s === "Overdue" ? "er" : s === "Due soon" ? "wa" : "";
 
 export function OwnerVacc({ db, setDb, me, go, say }) {
   const pets = scope(db, me, "pets");
-  const [sel, setSel] = useState(() => (pick.petId && pets.some(p => p.id === pick.petId) ? pick.petId : pets[0] ? pets[0].id : ""));
+  const [selectedId, setSel] = useState(() => (pick.petId && pets.some(p => p.id === pick.petId) ? pick.petId : pets[0] ? pets[0].id : ""));
+  const sel = pets.some(p => p.id === selectedId) ? selectedId : pets[0]?.id || "";
   const [det, setDet] = useState(null), [st, setSt] = useState(""), [q, setQ] = useState(""), [tab, setTab] = useState("vacc");
   const [isFlipped, setIsFlipped] = useState(false); // Controls the 3D page flip animation
   const fileInputRef = useRef(null);
@@ -73,7 +74,7 @@ export function OwnerVacc({ db, setDb, me, go, say }) {
   // Whenever selected pet changes, reset to page 1
   useEffect(() => { setIsFlipped(false); }, [sel]);
 
-  const all = (scope(db, me, "vacc") || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const all = (scope(db, me, "vacc") || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const myAppts = (scope(db, me, "appts") || []).filter(a => !["Cancelled", "No-show"].includes(a.status));
   const getApptForRecord = v => {
     if (!v) return null;
@@ -178,7 +179,7 @@ export function OwnerVacc({ db, setDb, me, go, say }) {
   }
 
   const nextState = next ? stateOf(next) : "";
-  const cardIdFormatted = p?.vaccinationCardId || `VACC-${new Date().getFullYear()}-8492`;
+  const cardIdFormatted = p?.vaccinationCardId || "Awaiting clinic-issued card";
 
   const handleRowClick = (v) => {
     setDet(v);

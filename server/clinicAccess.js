@@ -39,6 +39,7 @@ export async function clinicAccess(req, res, next) {
       req.body.ownerId = req.user.ownerId;
       return next();
     }
+    if (/^\/appointments\/[^/]+\/handoff$/.test(path) && req.method === 'POST') return allow('vet') ? next() : denied();
     let match;
     if ((match = path.match(/^\/pet-requests\/([^/]+)(?:\/(approve|decline))?$/))) {
       if (!((['DELETE','PUT'].includes(req.method) && !match[2] && allow('owner')) || (req.method === 'POST' && match[2] && allow('assistant')))) return denied();

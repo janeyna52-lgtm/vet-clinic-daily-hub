@@ -1,3 +1,4 @@
+import CareFollowUps from "./CareFollowUps.jsx";
 import CheckoutInbox from "./CheckoutInbox.jsx";
 import ReminderStatus from "./ReminderStatus.jsx";
 import { currentVaccinationDue } from "../vaccinationDue.js";
@@ -13,7 +14,6 @@ import ClinicCalendar from "./ClinicCalendar.jsx";
 import CheckInModal from "./CheckInModal.jsx";
 import PetApprovalModal from "./PetApprovalModal.jsx";
 import PetRequestsPage from "./PetRequestsPage.jsx";
-import AssistantVaccinationManager from "./AssistantVaccinationManager.jsx";
 import PetCardModal from "./PetCardModal.jsx";
 import ClientsAndPatientsPage from "./ClientsAndPatientsPage.jsx";
 import DailySalesPage from "./DailySalesPage.jsx";
@@ -48,6 +48,7 @@ function Dash({ db, setDb, me, go, say }) {
 
   return (
     <>
+      <CareFollowUps db={db} go={go}  />
       <Hero
         title="Front Desk and Clinic Operations"
         text="Register walk-in owners and patients, check patients in, manage appointments and take payments."
@@ -438,7 +439,6 @@ export const assistant = {
     { k: "pet-requests", l: "Online Pet Requests", i: "paw", Page: PetRequestsPage, sub: "Review and approve online pet registrations with automated vaccination cards." },
     { k: "cal", l: "Appointments & Calendar", i: "calendar", Page: ClinicCalendar, sub: "Unified calendar schedules, slot booking, and appointments management." },
     { k: "clients-patients", l: "Clients & Patients Masterlist", i: "users", Page: ClientsAndPatientsPage, sub: "Unified masterlist of pet owners, animal patient profiles, and official vaccination cards." },
-    { k: "vacc", l: "Vaccination Cards", i: "syringe", Page: AssistantVaccinationManager, sub: "Manage official pet vaccination cards, log doctor-administered shots, and track boosters." },
     { k: "records", l: "Consultations & EMR", i: "file", Page: ConsultationsPage, sub: "Certified veterinary consultation notes, EMR, and prescription handoff." },
     { k: "pets", hide: true, Page: ClientsAndPatientsPage },
     { k: "owners", hide: true, Page: ClientsAndPatientsPage },

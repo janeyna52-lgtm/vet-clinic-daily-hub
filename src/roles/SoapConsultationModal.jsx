@@ -28,11 +28,12 @@ export default function SoapConsultationModal({ appt, pet, db, setDb, me, onClos
     // Vaccine administration
     giveVaccine: false,
     vaccine: "Anti-rabies",
-    brand: "Defensor 3",
-    batch: "LOT-" + new Date().getFullYear() + "-01",
+    brand: "",
+    batch: "",
     vaccineNotes: "Administered subcutaneously during consultation.",
     // Clinical Follow-up Scheduling
     scheduleFollowUp: false,
+    careStatus: "Follow-up required",
     followUpDays: "7",
     followUpDate: plus(7),
     followUpReason: `Clinical Follow-up & Post-treatment Re-check for ${pet.name}`,
@@ -88,6 +89,7 @@ export default function SoapConsultationModal({ appt, pet, db, setDb, me, onClos
       if (!f.batch.trim()) e.batch = "Lot / Batch number is required for official certification.";
     }
     if (f.scheduleFollowUp) {
+      if (!f.followUpReason.trim()) e.followUpReason = "Enter follow-up instructions.";
       if (!f.followUpDate || f.followUpDate < TODAY) e.followUpDate = "Follow-up date must be today or in the future.";
     }
 
@@ -111,6 +113,9 @@ export default function SoapConsultationModal({ appt, pet, db, setDb, me, onClos
       diagnosis: f.diagnosis.trim(),
       treatment: f.treatment.trim(),
       prescription: f.prescription.trim(),
+      careStatus: f.scheduleFollowUp ? f.careStatus : "Routine care",
+      followUpDate: f.scheduleFollowUp ? f.followUpDate : null,
+      followUpReason: f.scheduleFollowUp ? f.followUpReason.trim() : "",
     };
 
     let newVacc = null;
@@ -525,6 +530,7 @@ export default function SoapConsultationModal({ appt, pet, db, setDb, me, onClos
 
                 {f.scheduleFollowUp && (
                   <div style={{ marginTop: "12px" }}>
+                    <label>Care status <select value={f.careStatus} onChange={e => set("careStatus", e.target.value)}><option>Follow-up required</option><option>Recheck required</option></select></label>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "10px" }}>
                       {[
                         { label: "In 3 Days", days: 3 },
@@ -553,15 +559,17 @@ export default function SoapConsultationModal({ appt, pet, db, setDb, me, onClos
                           min={TODAY}
                           onChange={e => set("followUpDate", e.target.value)}
                         />
+                        {errs.followUpDate && <p className="err" role="alert">{errs.followUpDate}</p>}
                       </div>
                       <div className="fld">
                         <label>Follow-up Reason / Clinical Instructions</label>
                         <input
                           type="text"
-                          value={f.followUpReason}
+                          maxLength={2000} value={f.followUpReason}
                           onChange={e => set("followUpReason", e.target.value)}
                           placeholder="e.g. Suture removal, wound check, ear cytology re-eval..."
                         />
+                        {errs.followUpReason && <p className="err" role="alert">{errs.followUpReason}</p>}
                       </div>
                     </div>
                   </div>
